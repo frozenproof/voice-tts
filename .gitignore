@@ -2,6 +2,8 @@ __pycache__/
 .ipynb_checkpoints/
 processed
 voices_input
+samplers
+voices_output
 outputs
 outputs_v2
 checkpoints
@@ -12,3 +14,4 @@ examples*
 build
 *.egg-info/
 *.zip
+2_multiple_voice_clone.py

@@ -18,6 +18,30 @@ torch.backends.cudnn.allow_tf32 = True
 def get_timestamp():
     return datetime.utcnow().strftime('%Y%m%d_%H%M%S')
 
+def match_speaker(language_key, speaker_ids):
+    # Normalize the input key
+    normalized_input = language_key.upper()
+    
+    # Create both hyphen and underscore versions
+    hyphen_version = normalized_input.replace('_', '-')
+    underscore_version = normalized_input.replace('-', '_')
+    
+    # Check for direct matches first
+    if normalized_input in speaker_ids:
+        return normalized_input
+    
+    # Then check normalized versions
+    for speaker_key in speaker_ids.keys():
+        normalized_speaker = speaker_key.upper()
+        if (normalized_speaker == hyphen_version or 
+            normalized_speaker == underscore_version):
+            return speaker_key
+            
+    print(f"Available speaker formats:")
+    for k in speaker_ids.keys():
+        print(f"  - {k}")
+    return None
+
 class VoiceConverter:
     def __init__(self, ckpt_converter, device, output_dir):
         self.ckpt_converter = ckpt_converter
@@ -40,6 +64,11 @@ class VoiceConverter:
         
     def process_text(self, text, language_key, reference_speaker, language='EN', speed=1.0):
         try:
+            # Check if the text is empty or only whitespace
+            if not text or text.strip() == '':
+                print("Text is empty or invalid. Skipping processing.")
+                return None
+                
             torch.set_float32_matmul_precision('high')
             
             # Cache for TTS models
@@ -72,10 +101,12 @@ class VoiceConverter:
                 # Original matching logic for other cases
                 normalized_input = language_key.upper().replace('-', '_')
                 matching_speaker = None
-                for speaker_key in speaker_ids.keys():
-                    if speaker_key == normalized_input or speaker_key.replace('_', '-') == language_key.upper():
-                        matching_speaker = speaker_key
-                        break
+                # Then in your process_text method, replace the matching logic with:
+                matching_speaker = match_speaker(language_key, speaker_ids)
+                if not matching_speaker:
+                    print(f"No matching speaker found for {language_key}.")
+                    print(f"Available speakers: {list(speaker_ids.keys())}")
+                    return
 
             if not matching_speaker:
                 print(f"No matching speaker found for {language_key}. Available speakers: {list(speaker_ids.keys())}")
@@ -111,15 +142,15 @@ class VoiceConverter:
                 
                 print(f"Converting voice style...")
                            
-                encode_message = f"frozenproof_{get_timestamp()}"  # e.g. "frozenproof_20250109_0512"
-                print(f"Attempting to add watermark: {encode_message}")
+                # encode_message = f"frozenproof_{get_timestamp()}"  # e.g. "frozenproof_20250109_0512"
+                # print(f"Attempting to add watermark: {encode_message}")
 
                 self.tone_color_converter.convert(
                     audio_src_path=src_path,
                     src_se=source_se,
                     tgt_se=target_se,
                     output_path=save_path,
-                    message=encode_message
+                    # message=encode_message
                 )
                 print(f"Saved output to: {save_path}")
                     
@@ -176,23 +207,28 @@ def load_texts_from_excel(excels):
     
     return all_texts
 
+
+
 def main():
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     converter = VoiceConverter(
         ckpt_converter='checkpoints_v2/converter',
         device=device,
-        output_dir='outputs_v2'
+        # output_dir='outputs_v2',
+        output_dir='outputs_v2/Diary',
     )
     
     excels = {
         "key1": [
-            {"path": ["voices_input", "file1.xlsx"]}
+            # {"path": ["voices_input", "file1.xlsx"]}
+            {"path": ["voices_input", "Diary_1.xlsx"]}
         ]
     }
     
     # Load texts from Excel files - now returns a list
     texts = load_texts_from_excel(excels)
-    reference_speaker = 'resources/anime-cat-girl-2.mp3'
+    # reference_speaker = 'resources/anime-cat-girl-2.mp3'
+    reference_speaker = 'voices_output/concatenated_audio.mp3'
     
     # Group texts by language to minimize model reloading
     texts_by_language = {}
@@ -219,7 +255,6 @@ def main():
             except Exception as e:
                 print(f"Error processing text '{info['text']}': {str(e)}")
                 continue
-
 
 if __name__ == "__main__":
     try:
