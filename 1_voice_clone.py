@@ -101,41 +101,48 @@ class VoiceConverter:
                 print(f"Generating TTS audio for text: {text}")
                 model.tts_to_file(text, speaker_id, src_path, speed=speed)
                 
-                safe_text = "".join(x for x in text[:30] if x.isalnum() or x in (' ', '_', '-'))
+                safe_text = "".join(x for x in text[:19] if x.isalnum() or x in (' ', '_', '-'))
+                safe_reference_speaker = "".join(x for x in reference_speaker[:19] if x.isalnum() or x in ('_', '-'))
+                # safe_timestamp = "".join(x for x in timestamp[:9] if x.isalnum() or x in (' ', '_', '-'))
                 save_path = os.path.join(
                     self.output_dir, 
-                    f'output_v2_{normalized_key}_{timestamp}_{safe_text}_{language}.wav'
+                    f'output_v2_{normalized_key}_{timestamp}_{safe_text}_{language}_{safe_reference_speaker}.wav'
                 )
                 
                 print(f"Converting voice style...")
+                           
+                encode_message = f"frozenproof_{get_timestamp()}"  # e.g. "frozenproof_20250109_0512"
+                print(f"Attempting to add watermark: {encode_message}")
+
                 self.tone_color_converter.convert(
                     audio_src_path=src_path,
                     src_se=source_se,
                     tgt_se=target_se,
-                    output_path=save_path
+                    output_path=save_path,
+                    message=encode_message
                 )
                 print(f"Saved output to: {save_path}")
-                
+                    
             except Exception as e:
                 print(f"Error processing speaker {normalized_key}: {str(e)}")
-                
+                    
             if os.path.exists(src_path):
                 os.remove(src_path)
-                
+                    
         except Exception as e:
             print(f"Error in process_text: {str(e)}")
             raise
 
 def load_texts_from_excel(excels):
     """
-    Load texts from multiple Excel files and convert to the format needed for processing
+    Load texts from multiple Excel files and preserve all rows
     Expected Excel format:
     | language | speaker_key | text_content |
-    | EN      | EN-US       | Some text... |
-    | EN      | EN-BR       | Some text... |
-    | ZH      | EN-Default  | Some text... |
+    | EN      | EN-BR       | Text 1...    |
+    | EN      | EN-BR       | Text 2...    |
+    | EN      | EN-BR       | Text 3...    |
     """
-    all_texts = {}
+    all_texts = []  # Change to list instead of dict
     
     for category, excel_files in excels.items():
         for excel_info in excel_files:
@@ -150,17 +157,18 @@ def load_texts_from_excel(excels):
                     print(f"Warning: Excel file {file_path} missing required columns: {required_cols}")
                     continue
                 
-                # Create a dictionary with tuple keys (language, speaker_key)
-                texts_from_excel = {
-                    row['speaker_key']: {
+                # Convert each row to a dictionary and append to list
+                texts_from_excel = [
+                    {
+                        'speaker_key': row['speaker_key'],
                         'text': row['text_content'],
                         'language': row['language']
                     }
                     for _, row in df.iterrows()
-                }
+                ]
                 
-                # Update the main texts dictionary
-                all_texts.update(texts_from_excel)
+                # Extend the main texts list
+                all_texts.extend(texts_from_excel)
                 
             except Exception as e:
                 print(f"Error reading Excel file {file_path}: {str(e)}")
@@ -176,35 +184,23 @@ def main():
         output_dir='outputs_v2'
     )
     
-    # Define excel files to process
-    # Define excel files to process
     excels = {
         "key1": [
             {"path": ["voices_input", "file1.xlsx"]}
-        ],
-        # "key2": [
-        #     {"path": ["voices_input", "file3.xlsx"]},
-        #     {"path": ["voices_input", "file4.xlsx"]}
-        # ]
+        ]
     }
     
-    # Use the correct speaker keys that match the model's speaker_ids
-    # texts = {
-    #     'EN_INDIA': "I'm going to say. First of all I want you to love yourself, which I know is impossible because you are a goth.",
-    #     'EN-BR': "I'm going to say. First of all I want you to love yourself, which I know is impossible because you are a goth.",
-    # }
-    
-    # Load texts from Excel files
+    # Load texts from Excel files - now returns a list
     texts = load_texts_from_excel(excels)
-    reference_speaker = 'resources/demo_speaker1.mp3'
+    reference_speaker = 'resources/anime-cat-girl-2.mp3'
     
     # Group texts by language to minimize model reloading
     texts_by_language = {}
-    for speaker_key, info in texts.items():
-        language = info['language']
+    for text_info in texts:  # Changed to iterate over list
+        language = text_info['language']
         if language not in texts_by_language:
             texts_by_language[language] = []
-        texts_by_language[language].append((speaker_key, info))
+        texts_by_language[language].append((text_info['speaker_key'], text_info))
     
     print("\nStarting voice conversion process...")
     # Process each language group
@@ -223,6 +219,7 @@ def main():
             except Exception as e:
                 print(f"Error processing text '{info['text']}': {str(e)}")
                 continue
+
 
 if __name__ == "__main__":
     try:
