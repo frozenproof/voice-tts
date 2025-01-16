@@ -99,19 +99,12 @@ class VoiceConverter:
                 matching_speaker = 'EN-Newest'
             else:
                 # Original matching logic for other cases
-                normalized_input = language_key.upper().replace('-', '_')
-                matching_speaker = None
-                # Then in your process_text method, replace the matching logic with:
                 matching_speaker = match_speaker(language_key, speaker_ids)
                 if not matching_speaker:
                     print(f"No matching speaker found for {language_key}.")
                     print(f"Available speakers: {list(speaker_ids.keys())}")
                     return
 
-            if not matching_speaker:
-                print(f"No matching speaker found for {language_key}. Available speakers: {list(speaker_ids.keys())}")
-                return
-            
             speaker_id = speaker_ids[matching_speaker]
             normalized_key = matching_speaker.lower().replace('_', '-')
             
@@ -134,7 +127,6 @@ class VoiceConverter:
                 
                 safe_text = "".join(x for x in text[:19] if x.isalnum() or x in (' ', '_', '-'))
                 safe_reference_speaker = "".join(x for x in reference_speaker[:19] if x.isalnum() or x in ('_', '-'))
-                # safe_timestamp = "".join(x for x in timestamp[:9] if x.isalnum() or x in (' ', '_', '-'))
                 save_path = os.path.join(
                     self.output_dir, 
                     f'output_v2_{normalized_key}_{timestamp}_{safe_text}_{language}_{safe_reference_speaker}.wav'
@@ -142,15 +134,11 @@ class VoiceConverter:
                 
                 print(f"Converting voice style...")
                            
-                # encode_message = f"frozenproof_{get_timestamp()}"  # e.g. "frozenproof_20250109_0512"
-                # print(f"Attempting to add watermark: {encode_message}")
-
                 self.tone_color_converter.convert(
                     audio_src_path=src_path,
                     src_se=source_se,
                     tgt_se=target_se,
                     output_path=save_path,
-                    # message=encode_message
                 )
                 print(f"Saved output to: {save_path}")
                     
@@ -164,75 +152,112 @@ class VoiceConverter:
             print(f"Error in process_text: {str(e)}")
             raise
 
-def load_texts_from_excel(excels):
+def load_texts_from_excel(excels, sheet_names=None):
     """
-    Load texts from multiple Excel files and preserve all rows
-    Expected Excel format:
-    | language | speaker_key | text_content |
-    | EN      | EN-BR       | Text 1...    |
-    | EN      | EN-BR       | Text 2...    |
-    | EN      | EN-BR       | Text 3...    |
+    Load texts from multiple Excel files and sheets and preserve all rows
+    
+    Args:
+        excels: Dictionary containing excel file information
+        sheet_names: List of sheet names or indices to read. If None, reads first sheet only.
+                    Can be list of strings (sheet names) or integers (sheet indices)
+    
+    Expected Excel format per sheet:
+    | language | speaker_key | text_content | speed |
+    | EN      | EN-BR       | Text 1...    | 1.0   |
+    | EN      | EN-BR       | Text 2...    | 1.2   |
+    | EN      | EN-BR       | Text 3...    | 0.8   |
     """
-    all_texts = []  # Change to list instead of dict
+    all_texts = []
     
     for category, excel_files in excels.items():
         for excel_info in excel_files:
             file_path = Path(*excel_info["path"])
             
             try:
-                df = pd.read_excel(file_path)
+                # If no sheet_names provided, read first sheet only (original behavior)
+                if sheet_names is None:
+                    df = pd.read_excel(file_path)
+                    sheets_to_process = [df]
+                else:
+                    # Read specified sheets into a dictionary of dataframes
+                    excel_file = pd.ExcelFile(file_path)
+                    
+                    # Validate sheet names/indices exist in the file
+                    available_sheets = excel_file.sheet_names
+                    sheets_to_read = []
+                    
+                    for sheet in sheet_names:
+                        if isinstance(sheet, int):
+                            # Handle sheet indices
+                            if 0 <= sheet < len(available_sheets):
+                                sheets_to_read.append(available_sheets[sheet])
+                            else:
+                                print(f"Warning: Sheet index {sheet} out of range for file {file_path}")
+                        else:
+                            # Handle sheet names
+                            if sheet in available_sheets:
+                                sheets_to_read.append(sheet)
+                            else:
+                                print(f"Warning: Sheet '{sheet}' not found in file {file_path}")
+                    
+                    # Read all valid sheets
+                    sheets_to_process = [
+                        pd.read_excel(file_path, sheet_name=sheet)
+                        for sheet in sheets_to_read
+                    ]
                 
-                # Verify required columns exist
-                required_cols = ['language', 'speaker_key', 'text_content']
-                if not all(col in df.columns for col in required_cols):
-                    print(f"Warning: Excel file {file_path} missing required columns: {required_cols}")
-                    continue
-                
-                # Convert each row to a dictionary and append to list
-                texts_from_excel = [
-                    {
-                        'speaker_key': row['speaker_key'],
-                        'text': row['text_content'],
-                        'language': row['language']
-                    }
-                    for _, row in df.iterrows()
-                ]
-                
-                # Extend the main texts list
-                all_texts.extend(texts_from_excel)
+                # Process each sheet
+                for df in sheets_to_process:
+                    # Verify required columns exist
+                    required_cols = ['language', 'speaker_key', 'text_content', 'speed']
+                    if not all(col in df.columns for col in required_cols):
+                        print(f"Warning: Sheet in {file_path} missing required columns: {required_cols}")
+                        continue
+                    
+                    # Convert each row to a dictionary and append to list
+                    texts_from_excel = [
+                        {
+                            'speaker_key': row['speaker_key'],
+                            'text': row['text_content'],
+                            'language': row['language'],
+                            'speed': row['speed'] if pd.notna(row['speed']) else 1.0  # Default speed to 1.0 if empty
+                        }
+                        for _, row in df.iterrows()
+                    ]
+                    
+                    # Extend the main texts list
+                    all_texts.extend(texts_from_excel)
                 
             except Exception as e:
                 print(f"Error reading Excel file {file_path}: {str(e)}")
                 continue
     
     return all_texts
-
-
-
+    
 def main():
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     converter = VoiceConverter(
         ckpt_converter='checkpoints_v2/converter',
         device=device,
-        # output_dir='outputs_v2',
-        output_dir='outputs_v2/Diary',
+        output_dir='outputs_v2',
     )
     
     excels = {
         "key1": [
             # {"path": ["voices_input", "file1.xlsx"]}
-            {"path": ["voices_input", "Diary_1.xlsx"]}
+            {"path": ["voices_input", "file1.xlsx"]}
         ]
     }
     
     # Load texts from Excel files - now returns a list
-    texts = load_texts_from_excel(excels)
-    # reference_speaker = 'resources/anime-cat-girl-2.mp3'
+    texts = load_texts_from_excel(excels)  # sheet_names defaults to None
+    
+    # reference_speaker = 'voices_output/concatenated_audio.mp3'
     reference_speaker = 'voices_output/concatenated_audio.mp3'
     
     # Group texts by language to minimize model reloading
     texts_by_language = {}
-    for text_info in texts:  # Changed to iterate over list
+    for text_info in texts:
         language = text_info['language']
         if language not in texts_by_language:
             texts_by_language[language] = []
@@ -249,7 +274,8 @@ def main():
                     text=info['text'],
                     language_key=speaker_key,
                     reference_speaker=reference_speaker,
-                    language=language
+                    language=language,
+                    speed=info['speed']  # Pass the speed from the Excel data
                 )
                 print("Processing completed successfully")
             except Exception as e:

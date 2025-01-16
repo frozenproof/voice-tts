@@ -15,3 +15,4 @@ build
 *.egg-info/
 *.zip
 2_multiple_voice_clone.py
+concatenated_audio

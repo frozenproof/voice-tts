@@ -32,6 +32,6 @@ def concatenate_audio_files(input_folder, output_file):
 
 # Define the input folder and output file path
 input_folder = 'samplers'  # Replace with your folder path
-output_file = f'voices_output/concatenated_audio.mp3'  # Replace with your desired output path
+output_file = f'voices_output/{input_folder}.mp3'  # Replace with your desired output path
 
 concatenate_audio_files(input_folder, output_file)
